@@ -19,8 +19,8 @@ go get github.com/yuuavwa/fdx-proxy
 ### Integrating `fdx-proxy` with Your Service
 The primary use case for `fdx-proxy` is to integrate it with an external service that requires access to an HTTP node which is not directly accessible. Here’s how to use `fdx-proxy`:
 
-1. **Implement the Full Duplex Proxy Server in Your External Service:**
-   In your external service, use `fdx-proxy` to implement a full-duplex proxy server that listens for WebSocket connections from the proxy client. Here is an example:
+1. **Implement the Full Duplex Server in Your External Service:**
+   In your external service, use `fdx-proxy` to implement a full-duplex server that listens for WebSocket connections from the proxy client. Here is an example:
 
    ```go
    package main
