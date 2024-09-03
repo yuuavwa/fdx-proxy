@@ -10,7 +10,7 @@ import (
 )
 
 
-func start_client(serverAddr, targetID string) {
+func start_proxy(serverAddr, targetID string) {
     serverURL := "/api/EstablishFullDuplexChannel/" + targetID
 	ctrl, err := proxy.NewFullDuplexProxyController(serverAddr, serverURL)
     if err != nil {
@@ -67,7 +67,7 @@ func start_test_server() {
 }
 
 func main() {
-    mode := flag.String("m", "test-server", "start mode (test-server or client)")
+    mode := flag.String("m", "test-server", "start mode (test-server or proxy)")
     serverAddr := flag.String("s", "localhost:8080", "server address")
     targetAddr := flag.String("t", "localhost:5000", "target identifier(target address commonly) registered to server")
     flag.Parse()
@@ -76,9 +76,9 @@ func main() {
     case "test-server":
         fmt.Println("Starting server...")
         start_test_server()
-    case "client":  
+    case "proxy":  
         fmt.Println("Starting client...")
-        start_client(*serverAddr, *targetAddr)
+        start_proxy(*serverAddr, *targetAddr)
     default:  
         fmt.Println("Invalid mode, use 'server' or 'client'")
     }
