@@ -23,47 +23,44 @@ The primary use case for `fdx-proxy` is to integrate it with an external service
    In your external service, use `fdx-proxy` to implement a full-duplex server that listens for WebSocket connections from the proxy client. Here is an example:
 
    ```go
-   package main
-
    import (
        "fmt"
-       "github.com/gin-gonic/gin"
        proxy "github.com/yuuavwa/fdx-proxy"
    )
 
-   func serverProxyHandler(c *gin.Context) {
+   var serverCtrl *proxy.FullDuplexServerController
+   serverCtrl, _ = proxy.NewFullDuplexServerController()
+
+   // in your gin router handler
+   func ProxyHandler(c *gin.Context) {
        targetID := c.Param("target_id")
-       fmt.Println("Proxy targetID:", targetID)
-       ctrl, err := proxy.NewFullDuplexServerController(c, targetID)
+       err := serverCtrl.AddFullDuplexConnController(c, targetID)
        if err != nil {
            panic(err)
        }
+       // ...
+   }
 
-       // Handle incoming requests over WebSocket
-       for {
-           // Example request setup
+   func MyTask(target_id string) {
+       if ctrl, err := serverCtrl.GetFullDuplexConnController(target_id); ctrl != nil && err == nil {
            ReqMethod := "GET"
            ReqHeaders := map[string]string{}
            ReqBody := ""
-
-           // Sending example requests asynchronously
-           go func() {
-               ReqURL := "https://www.example.com/"
-               status, res_body, err := ctrl.CallAPI(targetID, ReqMethod, ReqURL, ReqHeaders, ReqBody)
-               if err != nil {
-                   fmt.Println("CallAPI error:", err)
-               }
-               fmt.Printf("Request URL: %v, Status: %v, Response Body: %v\n", ReqURL, status, res_body)
-           }()
-
-           // Sleep to throttle request rate
-           time.Sleep(time.Millisecond * 100)
+           ReqURL := "https://www.this-is-just-a-test.com/"
+           // here to use CallAPI to proxy the request through the websocket connection
+           status, res_body, err := serverCtrl.CallAPI(target_id, ReqMethod, ReqURL, ReqHeaders, ReqBody)
+           if err != nil {
+               panic(err)
+           }
+           fmt.Println(status, res_body)
+           // ...
        }
    }
 
    func main() {
        router := gin.Default()
-       router.GET("/api/EstablishFullDuplexChannel/:target_id", serverProxyHandler)
+       router.GET("/api/EstablishFullDuplexChannel/:target_id", ProxyHandler)
+       go MyTask("192.168.0.100:5000")
        router.Run(":8080")  // Start server on port 8080
    }
    ```
