@@ -5,11 +5,11 @@ import (
     "fmt"
     "net/http"
     "time"
-    "github.com/google/uuid"
+
     "github.com/gin-gonic/gin"
+    "github.com/google/uuid"
     "github.com/gorilla/websocket"
 )
-
 
 type FullDuplexServer interface {
     // Call an API through a FullDuplex websocket connection
@@ -17,45 +17,59 @@ type FullDuplexServer interface {
 }
 
 type FullDuplexConnController struct {
-    conn          *websocket.Conn
+    conn *websocket.Conn
     // Request buffer read by the write conn goroutine and written to the connection
-    reqBuffer     chan RequestMessage
+    reqBuffer chan RequestMessage
 }
 
 type FullDuplexServerController struct {
     // CurrentMap: map[string]FullDuplexConnController
-    connCtrls     *CurrentMap
+    connCtrls *CurrentMap
     // CurrentMap: map[string]chan ResponseMessage
-    resMsgs       *CurrentMap
+    resMsgs *CurrentMap
 }
 
+func NewFullDuplexServerController() (*FullDuplexServerController, error) {
+    connCtrls := NewCurrentMap()
+    ctrl := &FullDuplexServerController{
+        connCtrls: connCtrls,
+        resMsgs:   NewCurrentMap(),
+    }
+    return ctrl, nil
+}
 
-func NewFullDuplexServerController(c *gin.Context, targetID string) (*FullDuplexServerController, error) {
-    // new and initialize FullDuplex websocket connection controller
+func (s *FullDuplexServerController) AddFullDuplexConnController(c *gin.Context, targetID string) error {
+    // new and initialize WS websocket connection controller
     if targetID == "" {
         logger.Printf("no target address found for this call")
-        return nil, fmt.Errorf("no target address found for this call")
+        return fmt.Errorf("no target address found for this call")
     }
-	var upgrader = websocket.Upgrader{} 
+    var upgrader = websocket.Upgrader{}
     conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
     if err != nil {
         logger.Printf("upgrade:", err)
-        return nil, err
+        return err
     }
-    // defer conn.Close()
-    connCtrls := NewCurrentMap()
-    connCtrls.Set(targetID, FullDuplexConnController {
-        conn: conn,
+
+    s.connCtrls.Set(targetID, FullDuplexConnController{
+        conn:      conn,
         reqBuffer: make(chan RequestMessage, ConnReqQueueSize),
     })
-    ctrl := &FullDuplexServerController {
-        connCtrls: connCtrls,
-        resMsgs: NewCurrentMap(),
-    }
+
     logger.Printf("websocket upgrade for %v", targetID)
-    go ctrl.loopWriteRequestToConn(targetID)
-    go ctrl.loopReadResponseFromConn(targetID)
-    return ctrl, nil
+    go s.loopWriteRequestToConn(targetID)
+    go s.loopReadResponseFromConn(targetID)
+    return nil
+}
+
+func (s *FullDuplexServerController) GetFullDuplexConnController(connKey string) (*FullDuplexConnController, error) {
+    connCtrlInterface, exists := s.connCtrls.Get(connKey)
+    if !exists {
+        // logger.Printf("Connection controller for %s is not found.", connKey)
+        return nil, fmt.Errorf("connection controller for %s is not found", connKey)
+    }
+    wsConnCtrl := connCtrlInterface.(FullDuplexConnController)
+    return &wsConnCtrl, nil
 }
 
 func (s *FullDuplexServerController) loopReadResponseFromConn(connKey string) error {
@@ -78,7 +92,7 @@ func (s *FullDuplexServerController) loopReadResponseFromConn(connKey string) er
             logger.Println("unmarshal:", err)
             continue
         }
-        // Do not create a new channel and set it here, 
+        // Do not create a new channel and set it here,
         // as it could cause the resMsgs reading goroutine which may run ahead failing to get the channel.
         // The channel should be created and set by the resMsgs reading goroutine
         resCh, exists := s.resMsgs.Get(resp.ReqID)
@@ -88,11 +102,11 @@ func (s *FullDuplexServerController) loopReadResponseFromConn(connKey string) er
         }
         // here to write into the gotten channel
         resCh.(chan ResponseMessage) <- resp
-	}
+    }
 }
 
 func (s *FullDuplexServerController) loopWriteRequestToConn(connKey string) error {
-    // Loop to write messages from the request channel into the websocket connection  
+    // Loop to write messages from the request channel into the websocket connection
     connCtrl, exists := s.connCtrls.Get(connKey)
     if !exists {
         logger.Printf("Connection controller for %s is not found.", connKey)
@@ -113,16 +127,16 @@ func (s *FullDuplexServerController) loopWriteRequestToConn(connKey string) erro
     return nil
 }
 
-func (s *FullDuplexServerController) CallAPI(addr, method, url string, headers map[string]string, 
-        req_body string) (status int, res_body string, err error) {
+func (s *FullDuplexServerController) CallAPI(addr, method, url string, headers map[string]string,
+    req_body string) (status int, res_body string, err error) {
 
     rid := uuid.New().String()
-    reqMsg := RequestMessage {
-        ReqID: rid,
-        Method: method,
-        URL: url,
+    reqMsg := RequestMessage{
+        ReqID:   rid,
+        Method:  method,
+        URL:     url,
         Headers: headers,
-        Body: req_body,
+        Body:    req_body,
     }
     // Reserve an extra buffer to prevent blocking in loopReadResponseFromConn on a single channel write
     s.resMsgs.Set(rid, make(chan ResponseMessage, 1))
@@ -140,16 +154,16 @@ func (s *FullDuplexServerController) CallAPI(addr, method, url string, headers m
         return http.StatusInternalServerError, "", fmt.Errorf("get no res msg channel for %v", rid)
     }
     select {
-        case resMsg := <-resCh.(chan ResponseMessage):
-            // Successfully retrieve data from the channel
-            // Clear the corresponding request dictionary entry to free up space
-            close(resCh.(chan ResponseMessage))
-            s.resMsgs.Delete(resMsg.ReqID)
-            return resMsg.Status, resMsg.Body, nil
-        case <-time.After(time.Duration(ResponseTimeout) * time.Second):
-            // Timeout occurred without retrieving data from the channel
-            close(resCh.(chan ResponseMessage))
-            s.resMsgs.Delete(rid)
-            return http.StatusInternalServerError, "", fmt.Errorf("timeout: no data received from %s within %v seconds", addr, ResponseTimeout)
-        }
+    case resMsg := <-resCh.(chan ResponseMessage):
+        // Successfully retrieve data from the channel
+        // Clear the corresponding request dictionary entry to free up space
+        close(resCh.(chan ResponseMessage))
+        s.resMsgs.Delete(resMsg.ReqID)
+        return resMsg.Status, resMsg.Body, nil
+    case <-time.After(time.Duration(ResponseTimeout) * time.Second):
+        // Timeout occurred without retrieving data from the channel
+        close(resCh.(chan ResponseMessage))
+        s.resMsgs.Delete(rid)
+        return http.StatusInternalServerError, "", fmt.Errorf("timeout: no data received from %s within %v seconds", addr, ResponseTimeout)
+    }
 }
